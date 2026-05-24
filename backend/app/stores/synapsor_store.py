@@ -463,7 +463,7 @@ class SynapsorStore:
             if not branch:
                 raise RuntimeError("Synapsor did not return an auto-created proposal branch")
             try:
-                diff = db.diff_branch(branch, "main")
+                diff = db.preview_write(handle, session=session)
             except Exception as exc:
                 diff = {"warning": str(exc)}
             return {
@@ -479,12 +479,15 @@ class SynapsorStore:
             db = self.db()
             owner = self._proposal_owner(proposal_handle) or approver
             session = {"tenant_id": "acme", "principal": owner, "session_id": new_id("APPROVE"), "snapshot_ts": 0}
-            if branch_name:
-                session["branch_id"] = branch_name
             preview = db.preview_write(proposal_handle, session=session)
             approved = db.approve_write(proposal_handle, session=session)
-            committed = db.commit_write(proposal_handle, session=session)
-            merged = db.merge_branch(branch_name, "main") if branch_name else {}
+            committed = db.commit_write(
+                proposal_handle,
+                session=session,
+                promote_branch=bool(branch_name),
+                target_branch=self.settings.synapsor_database_id if branch_name else None,
+            )
+            merged = committed.get("promotion", {}) if isinstance(committed, dict) else {}
             return {
                 "preview": preview,
                 "approved": approved,
@@ -496,8 +499,8 @@ class SynapsorStore:
                 "lifecycle": [
                     "PREVIEW WRITE",
                     "APPROVE WRITE",
-                    "COMMIT WRITE",
-                    "MERGE BRANCH" if branch_name else "NO BRANCH MERGE",
+                    "COMMIT WRITE WITH PROMOTE BRANCH" if branch_name else "COMMIT WRITE",
+                    "AUTO BRANCH MERGED BY COMMIT" if branch_name else "NO BRANCH MERGE",
                 ],
             }
 
@@ -536,7 +539,7 @@ class SynapsorStore:
             "USE BRANCH",
             "WRITE PROPOSAL staged",
             "SETTLE WRITE using expenses.green_auto_settle",
-            "DIFF BRANCH",
+            "PREVIEW WRITE",
         ]
         if self._settlement_auto_merged(proposal.get("settlement")):
             proposal["status"] = "auto_settled"
@@ -549,16 +552,9 @@ class SynapsorStore:
             db = self.db()
             owner = self._proposal_owner(proposal_handle) or reviewer
             session = {"tenant_id": "acme", "principal": owner, "session_id": new_id("REJECT"), "snapshot_ts": 0}
-            if branch_name:
-                session["branch_id"] = branch_name
             preview = db.preview_write(proposal_handle, session=session)
             rejected = db.reject_write(proposal_handle, session=session)
-            dropped = {}
-            if branch_name:
-                try:
-                    dropped = db.drop_branch(branch_name)
-                except Exception as exc:  # branch may already be gone in repeated demos
-                    dropped = {"warning": str(exc)}
+            dropped = {"skipped": True, "reason": "hosted database-scoped keys leave rejected auto branches for runtime GC"}
             return {
                 "preview": preview,
                 "rejected": rejected,
@@ -640,8 +636,9 @@ class SynapsorStore:
             ORDER BY id DESC;
             """
         )
-        pending = [row for row in rows if row.get("state") not in {"committed", "rejected", "cancelled"}]
-        closed = [row for row in rows if row.get("state") in {"committed", "rejected", "cancelled"}]
+        active_states = {"proposed", "approved"}
+        pending = [row for row in rows if row.get("state") in active_states]
+        closed = [row for row in rows if row.get("state") not in active_states]
         for row in pending + closed:
             if _expense_id_from_summary(row) == expense_id:
                 branch = str(row.get("branch_name") or "")
@@ -670,7 +667,7 @@ class SynapsorStore:
             ORDER BY id DESC;
             """
         )
-        return [row for row in rows if row.get("state") not in {"committed", "rejected", "cancelled"}]
+        return [row for row in rows if row.get("state") in {"proposed", "approved"}]
 
     def create_uploaded_expense(self, payload: dict[str, Any]) -> Expense:
         expense_id = new_id("EXP")

@@ -75,7 +75,7 @@ Required Synapsor settings:
 SYNAPSOR_SERVER_API_KEY=...
 SYNAPSOR_URL=https://synapsor.ai
 SYNAPSOR_PROJECT_ID=expense_guard
-SYNAPSOR_DATABASE_ID=db_expense_guard_dev_1779596067
+SYNAPSOR_DATABASE_ID=<database_id_from_synapsor_console>
 ```
 
 The backend uses the same hosted API shape shown in the Synapsor console:
@@ -84,7 +84,7 @@ The backend uses the same hosted API shape shown in the Synapsor console:
 from synapsor import Client
 
 client = Client("https://synapsor.ai", api_key="<synapsor_api_key>")
-print(client.sql("SELECT id, name FROM tenants;", project_id="expense_guard", database_id="db_expense_guard_dev_1779596067"))
+print(client.sql("SELECT id, name FROM tenants;", project_id="expense_guard", database_id="<database_id_from_synapsor_console>"))
 ```
 
 ## Run It
@@ -165,7 +165,7 @@ Synapsor owns:
 - Write proposal creation.
 - Approval, commit, and branch merge.
 - Hosted project/database routing through `project_id=expense_guard` and
-  `database_id=db_expense_guard_dev_1779596067`.
+  the database-scoped `SYNAPSOR_DATABASE_ID` in `backend/.env`.
 
 Important files:
 

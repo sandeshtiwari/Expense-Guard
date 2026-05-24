@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     postgres_dsn: str = "postgresql://expense_guard:expense_guard@127.0.0.1:55432/expense_guard"
     synapsor_url: str = "https://synapsor.ai"
     synapsor_project_id: str = "expense_guard"
-    synapsor_database_id: str = "db_expense_guard_dev_1779596067"
+    synapsor_database_id: str = "db_expense_guard_dev_replace_me"
     synapsor_api_key: str = ""
     synapsor_server_api_key: str = ""
     synapsor_db_path: str = "../expense_guard_synapsor.db"
