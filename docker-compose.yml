@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: expense_guard_postgres
+    environment:
+      POSTGRES_DB: expense_guard
+      POSTGRES_USER: expense_guard
+      POSTGRES_PASSWORD: expense_guard
+    ports:
+      - "55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U expense_guard -d expense_guard"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - expense_guard_pgdata:/var/lib/postgresql/data
+
+volumes:
+  expense_guard_pgdata:

@@ -1,0 +1,1 @@
+"""Expense Guard backend."""
