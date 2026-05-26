@@ -321,15 +321,18 @@ Representative seeded demo metrics from this app:
 
 | Metric | General-purpose DBMS path | Synapsor agent-native DBMS path | Notes |
 | --- | ---: | ---: | --- |
+| Input tokens | Live OpenAI count | Live OpenAI count, usually lower | Shown in the UI after each agent run. The exact count varies by model response and selected expense. |
 | App glue LOC | 503 | 68 | Architecture metric from the lane adapters. |
 | App policy copies | 4 | 0 | Synapsor keeps the decision gate in SQL capability rules. |
-| DB-owned branch/write proposal | No | Yes | Synapsor stages production-impacting writes on a DB branch. |
+| DB-owned branch created | No | Yes, when a write is proposed | Synapsor stages production-impacting writes on a DB branch. |
+| Write proposal handle | App-owned approval row | `wrp://...` | Synapsor returns a DB-owned write proposal resource. |
+| Auto-settlement path | App-owned | Synapsor settlement policy | Green-lane writes can be auto-approved, auto-committed, and auto-merged by Synapsor. |
 | Replay / Agent Time Travel | App approximation | DB-owned | Synapsor records run/proposal/evidence resources. |
 | Evidence completeness | Partial/app assembled | Complete/DB evidence | Synapsor returns governed evidence handles. |
 | Typical tool calls | 3+ | 2 | Varies by selected expense and model path. |
 | Typical DB trips | 5+ | 2 | Varies by selected expense and proposal path. |
 
-Live token and latency numbers are shown in the UI after each run. They can vary because the OpenAI Agents SDK call, model routing, and hosted service latency can vary, but the architecture metrics above should stay stable unless the demo code changes.
+For the seeded coffee approval path, the UI records the input token count from the real OpenAI Agents SDK run for each lane. Treat that number as a demo-run metric, not a fixed benchmark: it can vary with model routing, prompt changes, selected expense, and hosted service latency. The stable comparison is that Synapsor needs less app-owned context because the database returns compact capability payloads, evidence handles, branch/proposal resources, and settlement state instead of making the app paste all of that into the LLM context.
 
 ## Postgres + pgvector vs Synapsor
 
