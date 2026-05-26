@@ -2,217 +2,14 @@ from __future__ import annotations
 
 import json
 import threading
-import urllib.error
-import urllib.request
 from datetime import UTC, datetime
 from typing import Any
+
+from synapsor import Synapsor
 
 from app.config import ROOT, get_settings
 from app.schemas import AgentContextBundle, Expense
 from app.utils import new_id, normalize_rows, receipt_hash, sql_string
-
-
-class RemoteSynapsorClient:
-    def __init__(
-        self,
-        *,
-        base_url: str,
-        api_key: str,
-        project_id: str,
-        database_id: str,
-        timeout_seconds: int = 45,
-    ) -> None:
-        self.base_url = base_url.rstrip("/")
-        self.api_key = api_key
-        self.project_id = project_id
-        self.database_id = database_id
-        self.timeout_seconds = timeout_seconds
-        self.session: dict[str, Any] = {}
-
-    def close(self) -> None:
-        return None
-
-    def sql(self, sql: str, *, project_id: str | None = None, database_id: str | None = None) -> dict[str, Any]:
-        return self.execute(sql, project_id=project_id, database_id=database_id)
-
-    def execute(
-        self,
-        sql: str,
-        *,
-        session: dict[str, Any] | None = None,
-        as_of: dict[str, Any] | None = None,
-        project_id: str | None = None,
-        database_id: str | None = None,
-    ) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "sql": sql,
-            "project_id": project_id or self.project_id,
-            "database_id": database_id or self.database_id,
-        }
-        request_session = session if session is not None else self.session
-        if request_session:
-            payload["session"] = request_session
-        if as_of is not None:
-            payload["as_of"] = as_of
-        return self._request("POST", "/v1/query" if as_of is not None else "/v1/sql", payload)
-
-    def query(
-        self,
-        sql: str,
-        *,
-        session: dict[str, Any] | None = None,
-        as_of: dict[str, Any] | None = None,
-    ) -> list[dict[str, Any]]:
-        result = self.execute(sql, session=session, as_of=as_of)
-        results = result.get("results", [])
-        if not results:
-            return []
-        return list(results[-1].get("result", {}).get("rows", []))
-
-    def invoke_agent_capability(
-        self,
-        capability: str,
-        arguments: dict[str, Any] | None = None,
-        *,
-        session: dict[str, Any] | None = None,
-        trace_id: str | None = None,
-        mode: str | None = None,
-        auto_branch: bool | None = None,
-        response_envelope: bool | None = None,
-        include_audit_trail: bool | None = None,
-        settlement_policy: str | None = None,
-    ) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "capability": capability,
-            "arguments": arguments or {},
-            "session": self._require_session(session),
-        }
-        if trace_id is not None:
-            payload["trace_id"] = trace_id
-        if mode is not None:
-            payload["mode"] = mode
-        if auto_branch is not None:
-            payload["auto_branch"] = bool(auto_branch)
-        if response_envelope is not None:
-            payload["response_envelope"] = bool(response_envelope)
-        if include_audit_trail is not None:
-            payload["include_audit_trail"] = bool(include_audit_trail)
-        if settlement_policy is not None:
-            payload["settlement_policy"] = settlement_policy
-        return self._request("POST", "/v1/agent/invoke", payload)
-
-    def diff_branch(self, source: str, target: str = "main") -> dict[str, Any]:
-        response = self.execute(f"DIFF BRANCH {source} AGAINST {target};")
-        return response.get("results", [{}])[-1].get("result", {})
-
-    def merge_branch(self, source: str, target: str = "main") -> dict[str, Any]:
-        return self.execute(f"MERGE BRANCH {source} INTO {target};")
-
-    def drop_branch(self, name: str) -> dict[str, Any]:
-        return self.execute(f"DROP BRANCH {name};")
-
-    def read_resource(self, uri: str, *, session: dict[str, Any] | None = None) -> dict[str, Any]:
-        return self._request("POST", "/v1/resources/read", {"uri": uri, "session": self._require_session(session)})
-
-    def preview_write(self, proposal: str, *, session: dict[str, Any] | None = None) -> dict[str, Any]:
-        return self._proposal_lifecycle("preview", proposal, session=session)
-
-    def approve_write(self, proposal: str, *, session: dict[str, Any] | None = None) -> dict[str, Any]:
-        return self._proposal_lifecycle("approve", proposal, session=session)
-
-    def commit_write(
-        self,
-        proposal: str,
-        *,
-        session: dict[str, Any] | None = None,
-        promote_branch: bool | None = None,
-        target_branch: str | None = None,
-    ) -> dict[str, Any]:
-        return self._proposal_lifecycle(
-            "commit",
-            proposal,
-            session=session,
-            promote_branch=promote_branch,
-            target_branch=target_branch,
-        )
-
-    def reject_write(self, proposal: str, *, session: dict[str, Any] | None = None) -> dict[str, Any]:
-        return self._proposal_lifecycle("reject", proposal, session=session)
-
-    def settle_write(self, proposal: str, settlement_policy: str, *, session: dict[str, Any] | None = None) -> dict[str, Any]:
-        return self._proposal_lifecycle("settle", proposal, session=session, settlement_policy=settlement_policy)
-
-    def replay_agent_run(
-        self,
-        run_id: int,
-        *,
-        include_sensitive_memory: bool = False,
-        session: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        return self._request(
-            "POST",
-            "/v1/agent/runs/replay",
-            {
-                "run_id": int(run_id),
-                "session": self._require_session(session),
-                "include_sensitive_memory": include_sensitive_memory,
-            },
-        )
-
-    def _proposal_lifecycle(
-        self,
-        action: str,
-        proposal: str,
-        *,
-        session: dict[str, Any] | None = None,
-        promote_branch: bool | None = None,
-        target_branch: str | None = None,
-        settlement_policy: str | None = None,
-    ) -> dict[str, Any]:
-        payload: dict[str, Any] = {"proposal": proposal, "session": self._require_session(session)}
-        if promote_branch is not None:
-            payload["promote_branch"] = bool(promote_branch)
-        if target_branch is not None:
-            payload["target_branch"] = target_branch
-        if settlement_policy is not None:
-            payload["settlement_policy"] = settlement_policy
-        return self._request("POST", f"/v1/agent/proposals/{action}", payload)
-
-    def _require_session(self, session: dict[str, Any] | None = None) -> dict[str, Any]:
-        request_session = session if session is not None else self.session
-        if not request_session:
-            raise ValueError("agent APIs require a session with principal and tenant_id")
-        if "principal" not in request_session or "tenant_id" not in request_session:
-            raise ValueError("agent session requires principal and tenant_id")
-        return request_session
-
-    def _request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
-        request_payload = dict(payload or {})
-        request_payload.setdefault("project_id", self.project_id)
-        request_payload.setdefault("database_id", self.database_id)
-        body = json.dumps(request_payload, separators=(",", ":")).encode("utf-8")
-        headers = {
-            "accept": "application/json",
-            "content-type": "application/json",
-            "authorization": f"Bearer {self.api_key}",
-            "X-Synapsor-Project-Id": self.project_id,
-            "X-Synapsor-Database-Id": self.database_id,
-        }
-        request = urllib.request.Request(self.base_url + path, data=body, headers=headers, method=method)
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
-                raw = response.read().decode("utf-8")
-                return json.loads(raw or "{}")
-        except urllib.error.HTTPError as exc:
-            raw = exc.read().decode("utf-8", errors="replace")
-            try:
-                detail: Any = json.loads(raw or "{}")
-            except json.JSONDecodeError:
-                detail = {"error": raw}
-            message = detail.get("error") if isinstance(detail, dict) else None
-            raise RuntimeError(f"Synapsor HTTP {exc.code}: {message or detail}") from exc
-        except urllib.error.URLError as exc:
-            raise RuntimeError(f"Synapsor request failed: {exc.reason}") from exc
 
 
 class SynapsorStore:
@@ -232,11 +29,10 @@ class SynapsorStore:
             if self._db is None:
                 if not self.settings.synapsor_remote_api_key:
                     raise RuntimeError("SYNAPSOR_SERVER_API_KEY or SYNAPSOR_API_KEY is required for the remote Synapsor demo")
-                self._db = RemoteSynapsorClient(
-                    base_url=self.settings.synapsor_url,
+                self._db = Synapsor(
+                    self.settings.synapsor_url,
                     api_key=self.settings.synapsor_remote_api_key,
-                    project_id=self.settings.synapsor_project_id,
-                    database_id=self.settings.synapsor_database_id,
+                    timeout_seconds=45,
                 )
             return self._db
 

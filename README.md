@@ -81,10 +81,10 @@ SYNAPSOR_DATABASE_ID=<database_id_from_synapsor_console>
 The backend uses the same hosted API shape shown in the Synapsor console:
 
 ```python
-from synapsor import Client
+from synapsor import Synapsor
 
-client = Client("https://synapsor.ai", api_key="<synapsor_api_key>")
-print(client.sql("SELECT id, name FROM tenants;", project_id="expense_guard", database_id="<database_id_from_synapsor_console>"))
+client = Synapsor("https://synapsor.ai", api_key="<synapsor_api_key>")
+print(client.query("SELECT id, name FROM tenants;"))
 ```
 
 ## Run It

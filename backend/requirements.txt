@@ -3,6 +3,7 @@ uvicorn[standard]>=0.30.0
 pydantic>=2.8.0
 pydantic-settings>=2.4.0
 python-dotenv>=1.0.1
+synapsor>=0.1.1
 openai>=1.99.0
 openai-agents>=0.1.0
 psycopg[binary]>=3.2.1
