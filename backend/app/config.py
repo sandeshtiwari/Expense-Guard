@@ -22,10 +22,6 @@ class Settings(BaseSettings):
     synapsor_project_id: str = "expense_guard"
     synapsor_database_id: str = "db_expense_guard_dev_replace_me"
     synapsor_api_key: str = ""
-    synapsor_server_api_key: str = ""
-    synapsor_db_path: str = "../expense_guard_synapsor.db"
-    synapsor_server_binary: str = "/home/sandesh-tiwari/Desktop/C++/Synapsor/build/debug/synapsor_server"
-    synapsor_auto_start: bool = True
     cors_origins: str = "http://localhost:5174,http://127.0.0.1:5174"
     background_interval_seconds: int = 25
     log_level: str = "INFO"
@@ -37,15 +33,8 @@ class Settings(BaseSettings):
         return [item.strip() for item in self.cors_origins.split(",") if item.strip()]
 
     @property
-    def synapsor_db_abs_path(self) -> Path:
-        path = Path(self.synapsor_db_path)
-        if not path.is_absolute():
-            path = (ROOT / path).resolve()
-        return path
-
-    @property
     def synapsor_remote_api_key(self) -> str:
-        return self.synapsor_api_key or self.synapsor_server_api_key
+        return self.synapsor_api_key
 
     def configure_openai_environment(self) -> None:
         if self.openai_api_key:

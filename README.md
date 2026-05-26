@@ -66,13 +66,22 @@ Policies include active, draft, expired, and wrong-tenant examples so the app ca
 
 ## Remote Synapsor Setup
 
-The Synapsor lane talks to the hosted Synapsor runtime at `https://synapsor.ai`.
+The Synapsor lane is remote-only. It talks to the hosted Synapsor runtime at `https://synapsor.ai` through the installed Synapsor Python SDK.
+
+The Postgres lane is local and exists only as the comparison lane. It uses the local Postgres + pgvector service started by `run.sh`.
+
+Requirements for the Synapsor lane:
+
+- A Synapsor API key.
+- The Synapsor Python SDK installed in the backend environment.
+- A hosted Synapsor database/project available from `synapsor.ai`.
+
 The demo keeps the API key in `backend/.env`, which is ignored by git.
 
 Required Synapsor settings:
 
 ```bash
-SYNAPSOR_SERVER_API_KEY=...
+SYNAPSOR_API_KEY=...
 SYNAPSOR_URL=https://synapsor.ai
 SYNAPSOR_PROJECT_ID=expense_guard
 SYNAPSOR_DATABASE_ID=<database_id_from_synapsor_console>
@@ -87,6 +96,12 @@ client = Synapsor("https://synapsor.ai", api_key="<synapsor_api_key>")
 print(client.query("SELECT id, name FROM tenants;"))
 ```
 
+Install the SDK in the backend environment if needed:
+
+```bash
+pip install synapsor
+```
+
 ## Run It
 
 From this directory:
@@ -95,13 +110,13 @@ From this directory:
 ./run.sh
 ```
 
-The script starts:
+The script starts the local comparison services:
 
 - Postgres with pgvector on `127.0.0.1:55432`.
 - FastAPI on `127.0.0.1:8001`.
 - Vite React UI on `127.0.0.1:5174`.
 
-It resets the local Postgres baseline and re-seeds the remote Synapsor demo database.
+It resets the local Postgres baseline for the Postgres lane and re-seeds the hosted Synapsor demo database for the Synapsor lane.
 
 The OpenAI and Synapsor keys are loaded from `backend/.env`. The file is ignored by git.
 
@@ -301,6 +316,20 @@ The exact token numbers vary because real model calls vary. The shape should sta
 - Postgres lane: more tool calls, more DB round trips, more app-owned workflow code.
 - Synapsor lane: fewer tools, fewer round trips, database-owned business gates,
   evidence, and branch-staged proposal.
+
+Representative seeded demo metrics from this app:
+
+| Metric | General-purpose DBMS path | Synapsor agent-native DBMS path | Notes |
+| --- | ---: | ---: | --- |
+| App glue LOC | 503 | 68 | Architecture metric from the lane adapters. |
+| App policy copies | 4 | 0 | Synapsor keeps the decision gate in SQL capability rules. |
+| DB-owned branch/write proposal | No | Yes | Synapsor stages production-impacting writes on a DB branch. |
+| Replay / Agent Time Travel | App approximation | DB-owned | Synapsor records run/proposal/evidence resources. |
+| Evidence completeness | Partial/app assembled | Complete/DB evidence | Synapsor returns governed evidence handles. |
+| Typical tool calls | 3+ | 2 | Varies by selected expense and model path. |
+| Typical DB trips | 5+ | 2 | Varies by selected expense and proposal path. |
+
+Live token and latency numbers are shown in the UI after each run. They can vary because the OpenAI Agents SDK call, model routing, and hosted service latency can vary, but the architecture metrics above should stay stable unless the demo code changes.
 
 ## Postgres + pgvector vs Synapsor
 
